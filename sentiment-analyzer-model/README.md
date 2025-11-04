@@ -7,7 +7,7 @@ This directory should contain the ONNX INT8 quantized sentiment model.
 Run the setup script to download and prepare the model:
 
 ```bash
-python -m layers.sentiment-analyzer.setup_model
+python -m layers.sentiment_analyzer.setup_model
 ```
 
 This will:
@@ -27,3 +27,4 @@ This will:
 
 Model files are not committed to git due to size (516MB for safetensors).
 They are downloaded/generated during setup.
+

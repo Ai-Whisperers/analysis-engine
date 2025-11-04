@@ -167,7 +167,7 @@ class SentimentAnalyzer:
 
             # Record metrics
             MetricsCollector.record_processing(
-                layer="sentiment-analyzer",
+                layer="sentiment_analyzer",
                 operation="analyze",
                 records=len(texts),
                 duration_seconds=duration,
@@ -262,3 +262,4 @@ class SentimentAnalyzer:
         )
 
         return model_path, tokenizer_name
+

@@ -2,7 +2,7 @@
 Setup script to prepare ONNX INT8 sentiment model.
 
 Run this once during initial setup:
-    python -m layers.sentiment-analyzer.setup_model
+    python -m layers.sentiment_analyzer.setup_model
 """
 
 from .analyzer import SentimentAnalyzer
@@ -29,3 +29,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n✗ Model preparation failed: {e}")
         raise
+

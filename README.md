@@ -68,7 +68,7 @@ cd dataset-analyzer
 make install-dev
 
 # 3. Prepare ONNX model (one-time setup)
-python -m layers.sentiment-analyzer.setup_model
+python -m layers.sentiment_analyzer.setup_model
 
 # 4. Start services
 docker-compose -f deployment/docker-compose.yml up -d
@@ -252,7 +252,7 @@ dataset-analyzer/
 │   ├── input-layer/            # FastAPI + file uploads
 │   ├── parquet-conversion-layer/ # Data cleaning + conversion
 │   ├── rag-layer/              # Sharded SQLite + embeddings
-│   ├── sentiment-analyzer/     # ONNX INT8 inference
+│   ├── sentiment_analyzer/     # ONNX INT8 inference
 │   └── output-layer/           # API + exports
 ├── integration-tests/           # E2E, security, performance tests
 ├── deployment/                  # Docker + deployment configs
@@ -337,3 +337,4 @@ Built with production-grade architecture principles:
 ---
 
 **Made with ❤️ for production deployments**
+
