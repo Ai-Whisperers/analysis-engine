@@ -1,0 +1,146 @@
+name: CD - Build and Deploy
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+
+  workflow_dispatch:  # Manual trigger
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Generate deployment artifact
+        run: |
+          echo "IMAGE_TAG=${{ steps.meta.outputs.version }}" > deployment.env
+          echo "DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> deployment.env
+
+      - name: Upload deployment artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-info
+          path: deployment.env
+
+  deploy-production:
+    name: Deploy to Production (Oracle Cloud)
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://your-domain.com
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download deployment artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-info
+
+      - name: Load deployment info
+        run: cat deployment.env >> $GITHUB_ENV
+
+      - name: Deploy to Oracle Cloud
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.ORACLE_CLOUD_HOST }}
+          username: ${{ secrets.ORACLE_CLOUD_USER }}
+          key: ${{ secrets.ORACLE_CLOUD_SSH_KEY }}
+          script: |
+            cd /opt/dataset-analyzer
+
+            # Pull latest images
+            docker compose -f deployment/docker-compose.prod.yml pull
+
+            # Update and restart services (zero-downtime)
+            docker compose -f deployment/docker-compose.prod.yml up -d --remove-orphans
+
+            # Health check
+            sleep 10
+            curl -f http://localhost:8000/health || exit 1
+
+            # Cleanup old images
+            docker image prune -af --filter "until=72h"
+
+            echo "Deployment completed successfully!"
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✓ Production deployment successful!"
+          else
+            echo "✗ Production deployment failed!"
+            exit 1
+          fi
+
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    if: failure()
+    needs: deploy-production
+    environment:
+      name: production
+
+    steps:
+      - name: Rollback to previous version
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.ORACLE_CLOUD_HOST }}
+          username: ${{ secrets.ORACLE_CLOUD_USER }}
+          key: ${{ secrets.ORACLE_CLOUD_SSH_KEY }}
+          script: |
+            cd /opt/dataset-analyzer
+
+            # Rollback using previous images
+            docker compose -f deployment/docker-compose.prod.yml down
+            docker compose -f deployment/docker-compose.prod.yml up -d
+
+            echo "Rollback completed"

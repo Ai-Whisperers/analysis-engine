@@ -1,0 +1,4 @@
+user_id: [userid, id, user id, uid, user_identifier]
+nps: [nps, net promoter score, promoter_score, satisfaction]
+email: [mail, email address, e-mail, email_address]
+timestamp: [time, date, created_at, datetime, created, updated_at]

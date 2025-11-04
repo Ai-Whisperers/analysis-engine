@@ -1,0 +1,157 @@
+# Docker Compose for production (Oracle Cloud Free Tier)
+# Optimized for 1-2GB RAM, 1-2 CPUs
+
+version: '3.8'
+
+services:
+  # Input Layer (API) - Optimized for low memory
+  input-layer:
+    image: ghcr.io/${GITHUB_REPOSITORY}/dataset-analyzer:${VERSION:-latest}
+    container_name: input-layer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"  # Bind to localhost (nginx proxy)
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - JAEGER_AGENT_HOST=jaeger
+      - MAX_UPLOAD_SIZE_MB=100
+      - RATE_LIMIT_REQUESTS_PER_MINUTE=100
+    volumes:
+      - /data/uploads:/app/uploads
+      - /data/processed:/app/data
+      - /data/models:/app/models
+    command: >
+      uvicorn layers.input-layer.main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 2
+      --loop uvloop
+      --no-access-log
+    mem_limit: 512m
+    cpus: 0.5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Output Layer (Results API)
+  output-layer:
+    image: ghcr.io/${GITHUB_REPOSITORY}/dataset-analyzer:${VERSION:-latest}
+    container_name: output-layer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8001:8001"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+    volumes:
+      - /data/processed:/app/data
+    command: >
+      uvicorn layers.output-layer.main:app
+      --host 0.0.0.0
+      --port 8001
+      --workers 2
+      --loop uvloop
+      --no-access-log
+    mem_limit: 512m
+    cpus: 0.5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - app-network
+
+  # Jaeger (Distributed Tracing) - Minimal config
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6831:6831/udp"
+      - "127.0.0.1:16686:16686"
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+      - MEMORY_MAX_TRACES=1000  # Reduced for low memory
+    mem_limit: 256m
+    cpus: 0.25
+    networks:
+      - app-network
+
+  # Prometheus (Metrics) - Minimal retention
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=3d'  # 3 days only (low storage)
+      - '--storage.tsdb.retention.size=1GB'
+    mem_limit: 256m
+    cpus: 0.25
+    networks:
+      - app-network
+
+  # Grafana (Visualization)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changeme}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana-data:/var/lib/grafana
+    mem_limit: 256m
+    cpus: 0.25
+    depends_on:
+      - prometheus
+    networks:
+      - app-network
+
+  # Nginx (Reverse Proxy + HTTPS)
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    depends_on:
+      - input-layer
+      - output-layer
+    networks:
+      - app-network
+
+volumes:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  app-network:
+    driver: bridge

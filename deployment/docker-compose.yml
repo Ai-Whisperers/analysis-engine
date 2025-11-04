@@ -1,0 +1,105 @@
+# Docker Compose for development environment
+version: '3.8'
+
+services:
+  # Input Layer (API)
+  input-layer:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - JAEGER_AGENT_HOST=jaeger
+      - JAEGER_AGENT_PORT=6831
+    volumes:
+      - ../shared:/app/shared
+      - ../layers:/app/layers
+      - upload-data:/app/uploads
+      - processed-data:/app/data
+      - models:/app/models
+    command: uvicorn layers.input-layer.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - jaeger
+      - prometheus
+    networks:
+      - app-network
+
+  # Output Layer (Results API)
+  output-layer:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - JAEGER_AGENT_HOST=jaeger
+    volumes:
+      - ../shared:/app/shared
+      - ../layers:/app/layers
+      - processed-data:/app/data
+    command: uvicorn layers.output-layer.main:app --host 0.0.0.0 --port 8001 --reload
+    depends_on:
+      - jaeger
+    networks:
+      - app-network
+
+  # Jaeger (Distributed Tracing) - Free, self-hosted
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "6831:6831/udp"  # Agent
+      - "16686:16686"    # UI
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+      - MEMORY_MAX_TRACES=10000
+    networks:
+      - app-network
+
+  # Prometheus (Metrics) - Free, self-hosted
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+    networks:
+      - app-network
+
+  # Grafana (Visualization) - Free, self-hosted
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-dashboards:/etc/grafana/provisioning/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - app-network
+
+volumes:
+  upload-data:
+  processed-data:
+  models:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  app-network:
+    driver: bridge

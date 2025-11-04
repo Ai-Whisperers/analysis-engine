@@ -1,0 +1,30 @@
+# Prometheus configuration
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'dataset-analyzer'
+    environment: 'production'
+
+# Scrape configurations
+scrape_configs:
+  # Input Layer metrics
+  - job_name: 'input-layer'
+    static_configs:
+      - targets: ['input-layer:8000']
+    metrics_path: '/metrics'
+
+  # Output Layer metrics
+  - job_name: 'output-layer'
+    static_configs:
+      - targets: ['output-layer:8001']
+    metrics_path: '/metrics'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+# Alerting rules (optional)
+# rule_files:
+#   - 'alerts.yml'

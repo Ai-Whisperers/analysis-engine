@@ -1,0 +1,4 @@
+pyspark>=3.3.0
+PyYAML>=6.0
+chardet>=5.0.0
+rapidfuzz>=2.0.0
